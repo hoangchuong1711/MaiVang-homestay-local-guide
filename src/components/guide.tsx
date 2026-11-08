@@ -1,13 +1,12 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   ArrowDown,
   ArrowRight,
   ArrowUpRight,
   Check,
-  ChevronRight,
   Clock3,
   Compass,
   Copy,
@@ -20,7 +19,6 @@ import {
   MessageCircle,
   Navigation,
   Search,
-  SlidersHorizontal,
   Sparkles,
   Utensils,
   Volume2,
@@ -61,6 +59,10 @@ const phrases: Array<[english: string, vietnamese: string, phonetic: string]> = 
   ["Very delicious!", "Ngon lắm!", "ngawn lahm!"],
 ];
 
+type SheetSnap = "peek" | "half" | "full";
+const sheetOrder: SheetSnap[] = ["peek", "half", "full"];
+const MOBILE_QUERY = "(max-width: 760px)";
+
 const categorySubtitles: Record<Category | "All", string> = {
   All: "Every curated spot",
   Food: "Local bowls & riverside kitchens",
@@ -88,10 +90,19 @@ export default function Guide({
   const [locating, setLocating] = useState(false);
   const [locationMessage, setLocationMessage] = useState("");
   const [sort, setSort] = useState<"home" | "me">("home");
-  const [mobileView, setMobileView] = useState<"list" | "map">("list");
   const [copied, setCopied] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
   const locationRequest = useRef(0);
+
+  // Mobile bottom sheet: the map fills the stage and the list slides over it.
+  const [isMobile, setIsMobile] = useState(false);
+  const [sheet, setSheet] = useState<SheetSnap>("half");
+  const [stageHeight, setStageHeight] = useState(0);
+  const [peekHeight, setPeekHeight] = useState(136);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const sheetHeaderRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const drag = useRef<{ startY: number; startH: number; lastY: number; lastT: number; velocity: number; moved: boolean } | null>(null);
 
   const fromMe = sort === "me" && Boolean(position);
   const origin = fromMe && position ? position : homestay;
@@ -146,16 +157,136 @@ export default function Guide({
     setModal("place");
   }
 
+  function scrollStageIntoView() {
+    stageRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   function showOnMap(id: string) {
     setSelected(id);
     setModal(null);
-    setMobileView("map");
+    if (isMobile) {
+      setSheet("peek");
+      requestAnimationFrame(scrollStageIntoView);
+    }
   }
 
-  function jumpToCategory(target: Category | "All") {
-    setCategory(target);
-    const el = document.getElementById("explorer-section");
-    el?.scrollIntoView({ behavior: "smooth" });
+  /** Marker tap: on mobile, preview it above the sheet instead of covering the map with a dialog. */
+  function selectFromMap(id: string) {
+    if (!isMobile) {
+      openPlace(id);
+      return;
+    }
+    setSelected(id);
+    setSheet("peek");
+    const card = document.getElementById(`place-${id}`);
+    if (card && listRef.current) listRef.current.scrollTo({ top: card.offsetTop - 8, behavior: "smooth" });
+  }
+
+  const snapHeights: Record<SheetSnap, number> = {
+    peek: peekHeight,
+    half: Math.round(stageHeight * 0.52),
+    full: Math.max(peekHeight, stageHeight - 66),
+  };
+  const restHeight = isMobile && stageHeight > 0 ? snapHeights[sheet] : 0;
+
+  useEffect(() => {
+    const query = window.matchMedia(MOBILE_QUERY);
+    const update = () => setIsMobile(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const header = sheetHeaderRef.current;
+    if (!stage || !header) return;
+    const observer = new ResizeObserver(() => {
+      setStageHeight(stage.clientHeight);
+      setPeekHeight(header.offsetHeight);
+    });
+    observer.observe(stage);
+    observer.observe(header);
+    return () => observer.disconnect();
+  }, []);
+
+  // The sheet height lives in a CSS variable so dragging never re-renders React.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || drag.current) return;
+    if (restHeight) stage.style.setProperty("--sheet-h", `${restHeight}px`);
+    else stage.style.removeProperty("--sheet-h");
+  }, [restHeight]);
+
+  function snapTo(target: SheetSnap) {
+    stageRef.current?.style.setProperty("--sheet-h", `${snapHeights[target]}px`);
+    setSheet(target);
+  }
+
+  function cycleSheet() {
+    snapTo(sheet === "peek" ? "half" : sheet === "half" ? "full" : "half");
+  }
+
+  function onSheetPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!isMobile || !stageHeight) return;
+    if ((event.target as HTMLElement).closest("input, select, .search-box button")) return;
+    drag.current = {
+      startY: event.clientY,
+      startH: snapHeights[sheet],
+      lastY: event.clientY,
+      lastT: event.timeStamp,
+      velocity: 0,
+      moved: false,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    stageRef.current?.classList.add("is-dragging");
+  }
+
+  function onSheetPointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = drag.current;
+    if (!state) return;
+    const delta = state.startY - event.clientY;
+    if (Math.abs(delta) > 5) state.moved = true;
+    const height = Math.min(snapHeights.full + 12, Math.max(snapHeights.peek - 24, state.startH + delta));
+    stageRef.current?.style.setProperty("--sheet-h", `${height}px`);
+    const dt = Math.max(1, event.timeStamp - state.lastT);
+    state.velocity = (state.lastY - event.clientY) / dt;
+    state.lastY = event.clientY;
+    state.lastT = event.timeStamp;
+  }
+
+  function onSheetPointerUp(event: ReactPointerEvent<HTMLDivElement>) {
+    const state = drag.current;
+    if (!state) return;
+    drag.current = null;
+    stageRef.current?.classList.remove("is-dragging");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    if (!state.moved) {
+      cycleSheet();
+      return;
+    }
+    const height = state.startH + (state.startY - state.lastY);
+    let target: SheetSnap;
+    if (Math.abs(state.velocity) > 0.45) {
+      const ordered = sheetOrder.filter((snap) => (state.velocity > 0 ? snapHeights[snap] > height : snapHeights[snap] < height));
+      target = state.velocity > 0 ? ordered[0] ?? "full" : ordered[ordered.length - 1] ?? "peek";
+    } else {
+      target = sheetOrder.reduce((best, snap) =>
+        Math.abs(snapHeights[snap] - height) < Math.abs(snapHeights[best] - height) ? snap : best
+      );
+    }
+    snapTo(target);
+  }
+
+  function onGrabberKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    const index = sheetOrder.indexOf(sheet);
+    if (event.key === "ArrowUp" && index < 2) {
+      event.preventDefault();
+      snapTo(sheetOrder[index + 1]);
+    } else if (event.key === "ArrowDown" && index > 0) {
+      event.preventDefault();
+      snapTo(sheetOrder[index - 1]);
+    }
   }
 
   function locate() {
@@ -217,7 +348,7 @@ export default function Guide({
         <div className="site-header-inner">
           <a className="brand" href="/" aria-label={`${homestay.name} local guide home`}>
             <span className="brand-emblem" aria-hidden="true">
-              <MaiFlower size={26} className="brand-flower-svg" />
+              <MaiFlower size={24} className="brand-flower-svg" />
             </span>
             <span className="brand-text">
               <strong>
@@ -230,11 +361,11 @@ export default function Guide({
           <nav aria-label="Main navigation">
             <a className="nav-active" href="#explorer-section">
               <Compass size={15} />
-              <span>Field Guide</span>
+              <span>Explore</span>
             </a>
             <button type="button" onClick={() => setModal("phrases")}>
               <Languages size={15} />
-              <span>Pocket Vietnamese</span>
+              <span>Vietnamese</span>
             </button>
             <a href={directionsUrl(homestay)} target="_blank" rel="noreferrer">
               <Home size={15} />
@@ -243,433 +374,346 @@ export default function Guide({
           </nav>
 
           <button type="button" className="host-button" onClick={() => setModal("contact")}>
-            <MessageCircle size={16} />
-            <span>Ask your host</span>
-            <ArrowUpRight size={15} />
+            <MessageCircle size={15} />
+            <span>Ask host</span>
           </button>
         </div>
       </header>
 
       <main>
-        {/* Editorial Hero Journal */}
-        <section className="hero-journal" id="explore">
-          <div className="journal-topbar">
-            <span>FIELD NOTES NO. 01 · MEKONG DELTA</span>
-            <span className="journal-divider" aria-hidden="true">•</span>
-            <span>10.2289° N, 106.3675° E</span>
-            <span className="journal-divider" aria-hidden="true">•</span>
-            <span>CURATED BY MAI VÀNG HOMESTAY</span>
+        {/* Intro with Indochine Airmail Postcard */}
+        <section className="intro-compact" id="explore">
+          <div className="intro-compact-text">
+            <p className="eyebrow">
+              <span className="eyebrow-dot" /> HANDPICKED BY YOUR HOST
+            </p>
+            <h1>
+              Take the slow road. Find a little{" "}
+              <em className="highlight-place">
+                Bến Tre.
+                <svg className="river-underline" viewBox="0 0 220 14" fill="none" aria-hidden="true">
+                  <path
+                    d="M3 9.5C42 2.5 82 13.5 124 6.5C158 1.5 188 10.5 217 5.5"
+                    stroke="currentColor"
+                    strokeWidth="3.2"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </em>
+            </h1>
+            <p className="intro-copy">
+              Shaded coconut lanes, riverside kitchens, and everyday discoveries around Mai Vàng.
+            </p>
           </div>
 
-          <div className="hero-grid">
-            <div className="intro-main">
-              <p className="eyebrow">
-                <span className="eyebrow-dot" /> YOUR STAY, A LITTLE MORE LOCAL
-              </p>
-              <h1>
-                Take the slow road.
-                <br />
-                Find a little{" "}
-                <em className="highlight-place">
-                  Bến Tre.
-                  <svg className="river-underline" viewBox="0 0 220 14" fill="none" aria-hidden="true">
-                    <path
-                      d="M3 9.5C42 2.5 82 13.5 124 6.5C158 1.5 188 10.5 217 5.5"
-                      stroke="currentColor"
-                      strokeWidth="3.2"
-                      strokeLinecap="round"
-                    />
-                  </svg>
-                </em>
-              </h1>
-              <p className="intro-copy">
-                Shaded coconut lanes, riverside kitchens, and quiet ferries across the Tiền River.
-                We’ve gathered our family’s favorite corners of Bến Tre so you can wander like a neighbor, not a tourist.
-              </p>
+          <aside className="host-postcard" aria-label="A welcome postcard from your host">
+            <div className="postcard-inner">
+              <div className="postcard-header">
+                <div className="postcard-title-group">
+                  <span className="postcard-label">CARTE POSTALE · BẾN TRE</span>
+                  <span className="postcard-sub">A note for your stay</span>
+                </div>
+                <div className="postage-stamp" aria-hidden="true">
+                  <MaiFlower size={22} />
+                  <span>VIỆT NAM</span>
+                </div>
+              </div>
 
-              <div className="hero-quick-moods" aria-label="Quick category shortcuts">
-                <button type="button" onClick={() => jumpToCategory("Food")}>
-                  <span>🍜</span> Morning Noodles & Feasts
-                </button>
-                <button type="button" onClick={() => jumpToCategory("Cafe")}>
-                  <span>☕</span> Coconut & Garden Cafes
-                </button>
-                <button type="button" onClick={() => jumpToCategory("Tour")}>
-                  <span>🛶</span> River & Sampan Rides
-                </button>
-                <button type="button" onClick={() => jumpToCategory("Sightseeing")}>
-                  <span>🌿</span> Islands & Culture
-                </button>
+              <blockquote className="postcard-quote">
+                “Welcome to our little corner of coconut country. Take a bicycle, follow the river breeze, and enjoy the slow days.”
+              </blockquote>
+
+              <div className="postcard-footer">
+                <span className="postcard-sig">
+                  <Heart size={13} />
+                  <span>With love, Mai Vàng family</span>
+                </span>
+                <span className="postcard-coords">10.2289° N · 106.3675° E</span>
               </div>
             </div>
-
-            <aside className="host-postcard" aria-label="A welcome postcard from your host">
-              <div className="postcard-inner">
-                <div className="postcard-header">
-                  <div className="postcard-title-group">
-                    <span className="postcard-label">CARTE POSTALE · BẾN TRE</span>
-                    <span className="postcard-sub">From your host family</span>
-                  </div>
-                  <div className="postage-stamp" aria-hidden="true">
-                    <MaiFlower size={24} />
-                    <span>VIỆT NAM</span>
-                  </div>
-                </div>
-
-                <blockquote className="postcard-quote">
-                  “Welcome to our little corner of coconut country. Take a bicycle, follow the river breeze, and never hesitate to ask if you need a hand.”
-                </blockquote>
-
-                <div className="postcard-footer">
-                  <div className="postcard-sig">
-                    <Heart size={14} />
-                    <span>With love, Mai Vàng</span>
-                  </div>
-                  <button type="button" className="postcard-cta" onClick={() => setModal("contact")}>
-                    <span>Say hello</span>
-                    <ArrowUpRight size={13} />
-                  </button>
-                </div>
-              </div>
-            </aside>
-          </div>
+          </aside>
         </section>
 
         {/* Main Explorer Section */}
         <section className="explorer" id="explorer-section" aria-label="Local guide">
-          <div className="explorer-toolbar">
-            <div className="category-tabs" role="group" aria-label="Filter places by category">
-              <button
-                type="button"
-                className={category === "All" ? "active" : ""}
-                aria-pressed={category === "All"}
-                onClick={() => setCategory("All")}
-                title={categorySubtitles.All}
-              >
-                <Compass size={16} />
-                <span>All places</span>
-                {data.places.length > 0 && <em className="tab-count">{counts.All}</em>}
-              </button>
-              {categories.map((item) => (
+          <div ref={stageRef} className={`explorer-stage sheet-${sheet}`}>
+            <div className="explorer-toolbar">
+              <div className="category-tabs" role="group" aria-label="Filter places by category">
                 <button
                   type="button"
-                  key={item}
-                  className={category === item ? "active" : ""}
-                  aria-pressed={category === item}
-                  onClick={() => setCategory(item)}
-                  title={categorySubtitles[item]}
+                  className={category === "All" ? "active" : ""}
+                  aria-pressed={category === "All"}
+                  onClick={() => setCategory("All")}
+                  title={categorySubtitles.All}
                 >
-                  <span className="tab-emoji" aria-hidden="true">
-                    {categorySymbols[item]}
-                  </span>
-                  <span>{item}</span>
-                  {data.places.length > 0 && <em className="tab-count">{counts[item]}</em>}
+                  <Compass size={15} />
+                  <span>All</span>
+                  {data.places.length > 0 && <em className="tab-count">{counts.All}</em>}
                 </button>
-              ))}
-            </div>
+                {categories.map((item) => (
+                  <button
+                    type="button"
+                    key={item}
+                    className={category === item ? "active" : ""}
+                    aria-pressed={category === item}
+                    onClick={() => setCategory(item)}
+                    title={categorySubtitles[item]}
+                  >
+                    <span className="tab-emoji" aria-hidden="true">
+                      {categorySymbols[item]}
+                    </span>
+                    <span>{item}</span>
+                    {data.places.length > 0 && <em className="tab-count">{counts[item]}</em>}
+                  </button>
+                ))}
+              </div>
 
-            <button
-              type="button"
-              className={`location-button ${position ? "is-active" : ""}`}
-              onClick={locate}
-              disabled={locating}
-            >
-              <LocateFixed size={16} />
-              <span>{locating ? "Locating…" : position ? "Update my location" : "Use my location"}</span>
-            </button>
-          </div>
-
-          {locationMessage && (
-            <div className="location-status" role="status">
-              <LocateFixed size={15} />
-              <span>{locationMessage}</span>
               <button
                 type="button"
-                className="status-dismiss"
-                aria-label="Dismiss location notice"
-                onClick={() => setLocationMessage("")}
+                className={`location-button ${position ? "is-active" : ""}`}
+                onClick={locate}
+                disabled={locating}
               >
-                <X size={14} />
+                <LocateFixed size={15} />
+                <span className="location-button-text">
+                  {locating ? "Locating…" : position ? "Update location" : "Near me"}
+                </span>
               </button>
             </div>
-          )}
 
-          <div className="mobile-view-tabs" role="group" aria-label="Display mode">
-            <button
-              type="button"
-              className={mobileView === "list" ? "active" : ""}
-              aria-pressed={mobileView === "list"}
-              onClick={() => setMobileView("list")}
-            >
-              <SlidersHorizontal size={16} />
-              <span>Curated List ({filtered.length})</span>
-            </button>
-            <button
-              type="button"
-              className={mobileView === "map" ? "active" : ""}
-              aria-pressed={mobileView === "map"}
-              onClick={() => setMobileView("map")}
-            >
-              <Map size={16} />
-              <span>Interactive Map</span>
-            </button>
-          </div>
-
-          <div className={`explorer-body view-${mobileView}`}>
-            <section className="places-panel" id="places" aria-label="Recommended places">
-              <div className="places-panel-header">
-                <label className="search-box">
-                  <Search size={17} />
-                  <input
-                    aria-label="Search places"
-                    placeholder="Search dishes, cafes, islands…"
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                  />
-                  {query && (
-                    <button type="button" aria-label="Clear search" onClick={() => setQuery("")}>
-                      <X size={15} />
-                    </button>
-                  )}
-                </label>
-
-                <div className="list-heading">
-                  <span aria-live="polite">
-                    <strong>{filtered.length}</strong> {filtered.length === 1 ? "discovery" : "discoveries"} ·{" "}
-                    <span className="list-subtitle">{categorySubtitles[category]}</span>
-                  </span>
-                  <label className="sort-control">
-                    <ArrowDown size={13} />
-                    <select
-                      aria-label="Sort places by distance"
-                      value={sort}
-                      onChange={(e) => setSort(e.target.value as "home" | "me")}
-                    >
-                      <option value="home">From homestay</option>
-                      <option value="me" disabled={!position}>
-                        From my location
-                      </option>
-                    </select>
-                  </label>
-                </div>
+            {locationMessage && (
+              <div className="location-status" role="status">
+                <LocateFixed size={15} />
+                <span>{locationMessage}</span>
+                <button
+                  type="button"
+                  className="status-dismiss"
+                  aria-label="Dismiss location notice"
+                  onClick={() => setLocationMessage("")}
+                >
+                  <X size={14} />
+                </button>
               </div>
+            )}
 
-              <div className="place-list">
-                {data.status === "error" || data.status === "unconfigured" ? (
-                  <div className="empty-state">
-                    <div className="empty-icon-wrap">
-                      <MapPin size={28} />
-                    </div>
-                    <h2>Our guide is taking a moment.</h2>
-                    <p>
-                      {data.status === "unconfigured"
-                        ? "Connect the published places sheet in your local configuration to start exploring."
-                        : "We couldn’t load the places right now. Please check your connection and try again."}
-                    </p>
-                    <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-                      Try again
+            <div className="explorer-body">
+              <section className="places-panel" id="places" aria-label="Recommended places">
+                <div
+                  ref={sheetHeaderRef}
+                  className="places-panel-header"
+                  onPointerDown={onSheetPointerDown}
+                  onPointerMove={onSheetPointerMove}
+                  onPointerUp={onSheetPointerUp}
+                  onPointerCancel={onSheetPointerUp}
+                >
+                  <div className="sheet-grabber-row">
+                    <button
+                      type="button"
+                      className="sheet-grabber"
+                      aria-label={`Places sheet (${sheet} view). Press up or down arrow, tap, or drag to resize`}
+                      onKeyDown={onGrabberKeyDown}
+                    >
+                      <span className="sheet-grabber-pill" aria-hidden="true" />
                     </button>
-                  </div>
-                ) : filtered.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon-wrap">
-                      <Compass size={28} />
-                    </div>
-                    <h2>{data.places.length ? "A little further afield?" : "Good places are on their way."}</h2>
-                    <p>
-                      {data.places.length
-                        ? "No places match this filter yet. Try another category or ask your host for a personal recommendation."
-                        : "Your host is preparing the local recommendations. You can still find your way home on the map."}
-                    </p>
-                    {data.places.length > 0 && (
+                    <div className="sheet-snap-pills" role="group" aria-label="Sheet height">
                       <button
                         type="button"
-                        className="text-button"
-                        onClick={() => {
-                          setCategory("All");
-                          setQuery("");
-                        }}
+                        className={sheet === "peek" ? "active" : ""}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => snapTo("peek")}
                       >
-                        Show all places <ArrowRight size={16} />
+                        Map
+                      </button>
+                      <button
+                        type="button"
+                        className={sheet === "half" ? "active" : ""}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => snapTo("half")}
+                      >
+                        Split
+                      </button>
+                      <button
+                        type="button"
+                        className={sheet === "full" ? "active" : ""}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={() => snapTo("full")}
+                      >
+                        List ({filtered.length})
+                      </button>
+                    </div>
+                  </div>
+
+                  <label className="search-box">
+                    <Search size={16} />
+                    <input
+                      aria-label="Search places"
+                      placeholder="Search dishes, cafes, islands…"
+                      value={query}
+                      onFocus={() => {
+                        if (isMobile && sheet === "peek") snapTo("half");
+                      }}
+                      onChange={(e) => setQuery(e.target.value)}
+                    />
+                    {query && (
+                      <button type="button" aria-label="Clear search" onClick={() => setQuery("")}>
+                        <X size={15} />
                       </button>
                     )}
-                  </div>
-                ) : (
-                  filtered.map((p, index) => (
-                    <article
-                      key={p.id}
-                      className={`place-card ${selected === p.id ? "is-selected" : ""}`}
-                      onMouseEnter={() => setHovered(p.id)}
-                      onMouseLeave={() => setHovered(null)}
-                    >
-                      <button
-                        type="button"
-                        className="place-card-main"
-                        onClick={() => openPlace(p.id)}
+                  </label>
+
+                  <div className="list-heading">
+                    <span aria-live="polite">
+                      <strong>{filtered.length}</strong> {filtered.length === 1 ? "place" : "places"}
+                      <span className="list-subtitle"> · {categorySubtitles[category]}</span>
+                    </span>
+                    <label className="sort-control">
+                      <ArrowDown size={12} />
+                      <select
+                        aria-label="Sort places by distance"
+                        value={sort}
+                        onChange={(e) => setSort(e.target.value as "home" | "me")}
                       >
-                        <div className="card-image">
-                          <PlaceArt place={p} />
-                          <span className="card-number">No. {String(index + 1).padStart(2, "0")}</span>
-                        </div>
-                        <div className="card-content">
-                          <div className="card-top-row">
-                            <span className={`category-label label-${p.category.toLowerCase()}`}>
-                              {categorySymbols[p.category]} {p.category}
-                            </span>
-                            <span className="card-distance">
-                              <MapPin size={12} />
-                              {formatDistance(distanceKm(origin, p))} {fromMe ? "from you" : "from home"}
-                            </span>
-                          </div>
-                          <h2>{p.name}</h2>
-                          <p>{p.description || "A local discovery selected by your host. Tap for full details & directions."}</p>
+                        <option value="home">From homestay</option>
+                        <option value="me" disabled={!position}>
+                          From me
+                        </option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
 
-                          {p.whatToOrder && (
-                            <div className="card-dish-strip">
-                              <Utensils size={12} />
-                              <span>{p.whatToOrder}</span>
-                            </div>
-                          )}
-
-                          <div className="card-meta">
-                            <div className="card-tags">
-                              {p.priceRange && <span className="card-tag">{p.priceRange}</span>}
-                              {!p.priceRange && p.openingHours && <span className="card-tag">{p.openingHours}</span>}
-                              {p.tips && (
-                                <span className="card-tag tag-highlight">
-                                  <Sparkles size={11} /> Host tip
-                                </span>
-                              )}
-                            </div>
-                            <span className="card-arrow">
-                              <span>Read note</span>
-                              <ArrowUpRight size={14} />
-                            </span>
-                          </div>
-                        </div>
+                <div ref={listRef} className="place-list">
+                  {data.status === "error" || data.status === "unconfigured" ? (
+                    <div className="empty-state">
+                      <div className="empty-icon-wrap">
+                        <MapPin size={26} />
+                      </div>
+                      <h2>Our guide is taking a moment.</h2>
+                      <p>
+                        {data.status === "unconfigured"
+                          ? "Connect the published places sheet in your local configuration to start exploring."
+                          : "We couldn’t load the places right now. Please check your connection and try again."}
+                      </p>
+                      <button type="button" className="primary-button" onClick={() => window.location.reload()}>
+                        Try again
                       </button>
-                    </article>
-                  ))
-                )}
-              </div>
+                    </div>
+                  ) : filtered.length === 0 ? (
+                    <div className="empty-state">
+                      <div className="empty-icon-wrap">
+                        <Compass size={26} />
+                      </div>
+                      <h2>{data.places.length ? "No matches yet." : "Good places are on their way."}</h2>
+                      <p>
+                        {data.places.length
+                          ? "Try another category or clear your search."
+                          : "Your host is preparing the local recommendations."}
+                      </p>
+                      {data.places.length > 0 && (
+                        <button
+                          type="button"
+                          className="text-button"
+                          onClick={() => {
+                            setCategory("All");
+                            setQuery("");
+                          }}
+                        >
+                          Show all places <ArrowRight size={15} />
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    filtered.map((p, index) => (
+                      <article
+                        key={p.id}
+                        id={`place-${p.id}`}
+                        className={`place-card ${selected === p.id ? "is-selected" : ""}`}
+                        onMouseEnter={() => setHovered(p.id)}
+                        onMouseLeave={() => setHovered(null)}
+                      >
+                        <button
+                          type="button"
+                          className="place-card-main"
+                          onClick={() => openPlace(p.id)}
+                        >
+                          <div className="card-image">
+                            <PlaceArt place={p} />
+                            <span className="card-number">{String(index + 1).padStart(2, "0")}</span>
+                          </div>
+                          <div className="card-content">
+                            <div className="card-top-row">
+                              <span className={`category-label label-${p.category.toLowerCase()}`}>
+                                {categorySymbols[p.category]} {p.category}
+                              </span>
+                              <span className="card-distance">
+                                <MapPin size={12} />
+                                {formatDistance(distanceKm(origin, p))} {fromMe ? "from you" : "from home"}
+                              </span>
+                            </div>
+                            <h2>{p.name}</h2>
+                            <p>{p.description || "Selected by your host. Tap for details & directions."}</p>
 
-              <div className="list-footnote">
-                <MaiFlower size={16} />
-                <span>Handpicked by Mai Vàng · Explored at your own pace.</span>
-              </div>
-            </section>
+                            {p.whatToOrder && (
+                              <div className="card-dish-strip">
+                                <Utensils size={11} />
+                                <span>{p.whatToOrder}</span>
+                              </div>
+                            )}
 
-            <LocalMap
-              places={filtered}
-              selected={selected}
-              hovered={hovered}
-              onSelect={openPlace}
-              onClearSelection={() => setSelected(null)}
-              position={position}
-              origin={origin}
-              fromMe={fromMe}
-              token={token}
-              styleUrl={styleUrl}
-            />
+                            <div className="card-meta">
+                              <div className="card-tags">
+                                {p.priceRange && <span className="card-tag">{p.priceRange}</span>}
+                                {!p.priceRange && p.openingHours && <span className="card-tag">{p.openingHours}</span>}
+                                {p.tips && (
+                                  <span className="card-tag tag-highlight">
+                                    <Sparkles size={11} /> Tip
+                                  </span>
+                                )}
+                              </div>
+                              <span className="card-arrow">
+                                <span>Details</span>
+                                <ArrowUpRight size={14} />
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                      </article>
+                    ))
+                  )}
+                </div>
+              </section>
+
+              <LocalMap
+                places={filtered}
+                selected={selected}
+                hovered={hovered}
+                onSelect={selectFromMap}
+                onOpen={openPlace}
+                onClearSelection={() => setSelected(null)}
+                position={position}
+                origin={origin}
+                fromMe={fromMe}
+                bottomInset={restHeight}
+                cooperative={!isMobile}
+                token={token}
+                styleUrl={styleUrl}
+              />
+            </div>
           </div>
 
           <p className="distance-note">
-            Distances are approximate, measured in a straight line. Open Google Maps for turn-by-turn routes.
+            Straight-line distance estimates · Open Google Maps for actual routes.
           </p>
-        </section>
-
-        {/* Bento Extras: Home Base Sanctuary + Inline Pocket Vietnamese */}
-        <section className="bento-extras" aria-label="Useful things for your stay">
-          <div className="sanctuary-card">
-            <div className="sanctuary-watermark" aria-hidden="true">
-              <MaiFlower size={180} />
-            </div>
-            <div className="sanctuary-top">
-              <span className="sanctuary-badge">
-                <Home size={14} /> YOUR HOME BASE IN BẾN TRE
-              </span>
-              <h2>All country roads lead back to Mai Vàng.</h2>
-              <p>
-                Lost down a coconut lane or ready to head back before dusk? One tap opens turn-by-turn directions straight to our gate, or message us if you need a pickup.
-              </p>
-            </div>
-            <div className="sanctuary-actions">
-              <a
-                className="sanctuary-primary"
-                href={directionsUrl(homestay)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Navigation size={17} />
-                <span>Directions to Mai Vàng</span>
-                <ArrowUpRight size={16} />
-              </a>
-              <button
-                type="button"
-                className="sanctuary-secondary"
-                onClick={() => setModal("contact")}
-              >
-                <MessageCircle size={17} />
-                <span>Contact Host</span>
-              </button>
-            </div>
-          </div>
-
-          <div className="pocket-vn-card">
-            <div className="pocket-vn-header">
-              <div>
-                <span className="eyebrow">
-                  <Languages size={13} /> SPEAK LIKE A NEIGHBOR
-                </span>
-                <h2>A little Vietnamese goes a long way.</h2>
-              </div>
-              <button
-                type="button"
-                className="pocket-vn-all"
-                onClick={() => setModal("phrases")}
-              >
-                <span>All {phrases.length} phrases</span>
-                <ChevronRight size={16} />
-              </button>
-            </div>
-
-            <div className="pocket-vn-grid">
-              {phrases.slice(0, 4).map(([english, vietnamese, phonetic]) => {
-                const isCopied = copied === vietnamese;
-                return (
-                  <button
-                    type="button"
-                    key={english}
-                    className={`pocket-phrase-tile ${isCopied ? "is-copied" : ""}`}
-                    onClick={() => copyPhrase(vietnamese, true)}
-                    aria-label={`Copy and pronounce ${vietnamese}`}
-                  >
-                    <div className="tile-top">
-                      <small>{english}</small>
-                      <span className="tile-icon">
-                        {isCopied ? <Check size={14} /> : <Volume2 size={14} />}
-                      </span>
-                    </div>
-                    <strong lang="vi">{vietnamese}</strong>
-                    <em>“{phonetic}”</em>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
         </section>
       </main>
 
       <footer className="site-footer">
         <div className="site-footer-inner">
           <span className="footer-brand">
-            <MaiFlower size={20} className="footer-flower-svg" />
-            <span>Crafted for slow, sun-dappled days in Bến Tre.</span>
+            <MaiFlower size={18} className="footer-flower-svg" />
+            <span>Made for slow days in Bến Tre.</span>
           </span>
-          <button type="button" onClick={() => setModal("contact")}>
-            Need a hand? We’re right here <ArrowUpRight size={14} />
-          </button>
-          <small>{homestay.name} · Local Field Guide</small>
+          <small>{homestay.name} · Local Guide</small>
         </div>
       </footer>
 
@@ -709,7 +753,7 @@ export default function Guide({
                         · <strong>{formatDistance(distanceKm(position, place))}</strong> from you
                       </>
                     )}{" "}
-                    <span className="detail-distance-sub">(straight-line estimate)</span>
+                    <span className="detail-distance-sub">(straight-line)</span>
                   </span>
                 </p>
                 <p className="detail-description">
@@ -749,7 +793,7 @@ export default function Guide({
                       </button>
                     </div>
                     <p lang="vi">{place.whatToOrder}</p>
-                    <small>Tip: Show this box directly to the person taking your order.</small>
+                    <small>Show this box directly to the person taking your order.</small>
                   </section>
                 )}
 
@@ -759,7 +803,7 @@ export default function Guide({
                       <MaiFlower size={22} />
                     </span>
                     <div>
-                      <strong>A tip from your host</strong>
+                      <strong>Host tip</strong>
                       <p>{place.tips}</p>
                     </div>
                   </section>
@@ -782,10 +826,9 @@ export default function Guide({
                     onClick={() => showOnMap(place.id)}
                   >
                     <Map size={17} />
-                    <span>View pin on map</span>
+                    <span>Locate pin on map</span>
                   </button>
                 </div>
-                <p className="detail-note">Opens Google Maps for directions. Hours and prices may vary locally.</p>
               </div>
             </>
           )}
@@ -793,11 +836,11 @@ export default function Guide({
           {modal === "phrases" && (
             <div className="dialog-content phrases-content">
               <span className="eyebrow">
-                <Languages size={13} /> CONNECT WITH A FEW WORDS
+                <Languages size={13} /> SPEAK LIKE A NEIGHBOR
               </span>
               <h2 id="dialog-title">A little Vietnamese.</h2>
               <p className="detail-description">
-                Tap any phrase to copy it and hear the pronunciation, or simply show your screen to a local vendor.
+                Tap any phrase to copy and hear the pronunciation, or show your screen to a local vendor.
               </p>
               <div className="phrase-list">
                 {phrases.map(([english, vietnamese, phonetic]) => {
@@ -813,7 +856,7 @@ export default function Guide({
                       <span className="phrase-text">
                         <small>{english}</small>
                         <strong lang="vi">{vietnamese}</strong>
-                        <em className="phrase-phonetic">Pronounced: “{phonetic}”</em>
+                        <em className="phrase-phonetic">“{phonetic}”</em>
                       </span>
                       <span className="phrase-copy-badge">
                         {isCopied ? (
@@ -837,7 +880,7 @@ export default function Guide({
                   ? copied.startsWith("Could not")
                     ? copied
                     : "Copied to clipboard — ready to share or show."
-                  : "Tap any phrase to copy text & play audio if supported."}
+                  : "Tap any phrase to copy text & play audio."}
               </p>
             </div>
           )}
@@ -845,12 +888,12 @@ export default function Guide({
           {modal === "contact" && (
             <div className="dialog-content contact-content">
               <span className="contact-flower" aria-hidden="true">
-                <MaiFlower size={48} />
+                <MaiFlower size={46} />
               </span>
-              <span className="eyebrow">A FRIENDLY FACE, CLOSE BY</span>
+              <span className="eyebrow">ALWAYS HAPPY TO HELP</span>
               <h2 id="dialog-title">Ask your host.</h2>
               <p className="detail-description">
-                Looking for a place to eat, a bicycle or sampan boat ride, or a little help finding your way back? Message Mai Vàng anytime.
+                Need a recommendation, a bicycle or boat ride, or help finding your way back? Reach out to Mai Vàng anytime.
               </p>
               <div className="contact-actions">
                 <a className="primary-button" href={homestay.whatsapp} target="_blank" rel="noreferrer">
@@ -858,13 +901,13 @@ export default function Guide({
                   <span>Message on WhatsApp</span>
                   <ArrowUpRight size={17} />
                 </a>
-                <a className="secondary-button" href={homestay.zalo} target="_blank" rel="noreferrer">
-                  <span>Open Zalo chat</span>
+                <a className="secondary-button" href={homestay.instagram} target="_blank" rel="noreferrer">
+                  <span>Connect on Instagram (@maivanghomestay)</span>
                   <ArrowUpRight size={17} />
                 </a>
               </div>
               <a className="phone-link" href={`tel:${homestay.phone}`}>
-                Or call directly: +84 372 237 279
+                Or call directly: +84 372 237 278
               </a>
             </div>
           )}

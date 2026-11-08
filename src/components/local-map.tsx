@@ -10,11 +10,18 @@ type Props = {
   places: Place[];
   selected: string | null;
   hovered?: string | null;
+  /** Called when a marker is tapped. */
   onSelect: (id: string) => void;
+  /** Called when the floating preview card is tapped. Defaults to onSelect. */
+  onOpen?: (id: string) => void;
   onClearSelection?: () => void;
   position: Coordinates | null;
   origin?: Coordinates;
   fromMe?: boolean;
+  /** Height (px) of UI covering the bottom of the map, e.g. the mobile bottom sheet. */
+  bottomInset?: number;
+  /** Require two fingers / ctrl+scroll to move the map (useful when the map sits inside a scrolling page). */
+  cooperative?: boolean;
   token: string;
   styleUrl: string;
 };
@@ -24,21 +31,33 @@ export default function LocalMap({
   selected,
   hovered = null,
   onSelect,
+  onOpen,
   onClearSelection,
   position,
   origin = homestay,
   fromMe = false,
+  bottomInset = 0,
+  cooperative = true,
   token,
   styleUrl,
 }: Props) {
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const selectRef = useRef(onSelect);
+  const insetRef = useRef(bottomInset);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   selectRef.current = onSelect;
+  insetRef.current = bottomInset;
 
   const activePlace = places.find((p) => p.id === selected) || null;
+
+  /** Camera padding that keeps targets visible above the bottom sheet / preview card. */
+  function cameraPadding(extra = 0) {
+    const height = container.current?.clientHeight || 600;
+    const bottom = Math.min(insetRef.current + extra + 30, Math.max(30, height - 180));
+    return { top: 70, bottom, left: 30, right: 60 };
+  }
 
   useEffect(() => {
     if (!container.current || !token) return;
@@ -90,6 +109,10 @@ export default function LocalMap({
   }, [token, styleUrl]);
 
   useEffect(() => {
+    if (ready && map.current) map.current.setCooperativeGestures(cooperative);
+  }, [ready, cooperative]);
+
+  useEffect(() => {
     if (!ready || !map.current) return;
     const instance = map.current;
     const home = document.createElement("button");
@@ -136,14 +159,20 @@ export default function LocalMap({
   useEffect(() => {
     const place = places.find((p) => p.id === selected);
     if (ready && place) {
-      map.current?.flyTo({ center: [place.lng, place.lat], zoom: 14.2, essential: false });
+      // Leave room for the floating preview card when the map is partly covered (mobile sheet).
+      const extra = insetRef.current > 0 ? 96 : 0;
+      map.current?.flyTo({ center: [place.lng, place.lat], zoom: 14.2, essential: false, padding: cameraPadding(extra) });
     }
   }, [selected, places, ready]);
 
   function fitPlaces() {
     const bounds = new mapboxgl.LngLatBounds([homestay.lng, homestay.lat], [homestay.lng, homestay.lat]);
     places.forEach((p) => bounds.extend([p.lng, p.lat]));
-    map.current?.fitBounds(bounds, { padding: 65, maxZoom: 14, duration: 900 });
+    map.current?.fitBounds(bounds, { padding: cameraPadding(10), maxZoom: 14, duration: 900 });
+  }
+
+  function flyHome(target: Coordinates) {
+    map.current?.flyTo({ center: [target.lng, target.lat], zoom: 14, padding: cameraPadding() });
   }
 
   return (
@@ -153,24 +182,14 @@ export default function LocalMap({
         <span className="live-dot" /> AROUND MAI VÀNG <span className="map-label-divider">/</span> BẾN TRE
       </div>
       <div className="map-actions">
-        <button
-          title="Back to homestay"
-          aria-label="Center map on homestay"
-          disabled={!ready}
-          onClick={() => map.current?.flyTo({ center: [homestay.lng, homestay.lat], zoom: 14 })}
-        >
+        <button title="Back to homestay" aria-label="Center map on homestay" disabled={!ready} onClick={() => flyHome(homestay)}>
           <Home size={18} />
         </button>
         <button title="Show all places" aria-label="Fit all places on map" disabled={!ready} onClick={fitPlaces}>
           <RotateCcw size={18} />
         </button>
         {position && (
-          <button
-            title="Show my location"
-            aria-label="Center map on my location"
-            disabled={!ready}
-            onClick={() => map.current?.flyTo({ center: [position.lng, position.lat], zoom: 14 })}
-          >
+          <button title="Show my location" aria-label="Center map on my location" disabled={!ready} onClick={() => flyHome(position)}>
             <LocateFixed size={18} />
           </button>
         )}
@@ -179,7 +198,7 @@ export default function LocalMap({
         <div className="map-notice">
           <span className="notice-icon" aria-hidden="true">🗺️</span>
           <strong>Your map is almost ready</strong>
-          <p>Add your Mapbox public token to the local configuration. The curated guide on the left is ready to explore.</p>
+          <p>Add your Mapbox public token to the local configuration. The curated guide is ready to explore.</p>
         </div>
       ) : error ? (
         <div className="map-warning" role="status">
@@ -194,11 +213,7 @@ export default function LocalMap({
 
       {activePlace && (
         <div className="map-preview-card" role="region" aria-label={`Selected place: ${activePlace.name}`}>
-          <button
-            type="button"
-            className="map-preview-main"
-            onClick={() => onSelect(activePlace.id)}
-          >
+          <button type="button" className="map-preview-main" onClick={() => (onOpen ?? onSelect)(activePlace.id)}>
             <div className="map-preview-thumb">
               <PlaceArt place={activePlace} />
             </div>
@@ -227,12 +242,7 @@ export default function LocalMap({
               <ArrowUpRight size={13} />
             </a>
             {onClearSelection && (
-              <button
-                type="button"
-                className="map-preview-close"
-                aria-label="Close place preview"
-                onClick={onClearSelection}
-              >
+              <button type="button" className="map-preview-close" aria-label="Close place preview" onClick={onClearSelection}>
                 <X size={15} />
               </button>
             )}

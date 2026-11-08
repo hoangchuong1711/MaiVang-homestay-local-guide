@@ -3,9 +3,9 @@ export const homestay = {
   region: "Bến Tre, Vietnam",
   lat: 10.228855,
   lng: 106.3675106,
-  phone: "+84372237279",
-  whatsapp: "https://wa.me/84372237279",
-  zalo: "https://zalo.me/84372237279",
+  phone: "+84372237278",
+  whatsapp: "https://wa.me/84372237278",
+  instagram: "https://www.instagram.com/maivanghomestay?vrfl=cG4xOG54ZHc3c3k2",
 };
 
 export const categories = ["Food", "Sightseeing", "Cafe", "Tour", "Essentials"] as const;
