@@ -1,5 +1,5 @@
 export const homestay = {
-  name: "Mai Vàng Homstay",
+  name: "Mai Vàng Homestay",
   region: "Bến Tre, Vietnam",
   lat: 10.228855,
   lng: 106.3675106,

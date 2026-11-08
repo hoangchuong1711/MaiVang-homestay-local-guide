@@ -35,7 +35,7 @@ export function parsePlaces(csv: string): { places: Place[]; skipped: number } {
   const places: Place[] = [];
   let skipped = 0;
   parsed.data.forEach((row, index) => {
-    const get = (key: string) => (row[key] || "").trim();
+    const get = (key: string) => (row[key] || "").trim().normalize("NFC");
     const id = get("id"), name = get("name"), category = get("category");
     const lat = Number(get("lat")), lng = Number(get("lng"));
     if (invalidRows.has(index) || !id || !name || seen.has(id) || !categories.includes(category as Category)
