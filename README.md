@@ -85,7 +85,7 @@ Giai đoạn sau: thêm Supabase (👍, đặt dịch vụ, khách đóng góp)
 **Quy trình cập nhật nội dung:**
 1. Upload ảnh lên Cloudinary rồi copy link
 2. Thêm một dòng mới vào Google Sheets, dán link ảnh vào cột `image_url`
-3. Web tự cập nhật sau tối đa khoảng 1 phút (cache `revalidate: 60`), không cần sửa code
+3. Web đọc dữ liệu Sheet mới khi tải lại trang, không cần sửa code
 
 ## 🗂️ 7. Cấu trúc dữ liệu (các cột trong Google Sheets)
 

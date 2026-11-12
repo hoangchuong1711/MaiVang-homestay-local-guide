@@ -74,7 +74,7 @@ export async function getPlaces(): Promise<PlacesResult> {
       throw new Error("Invalid published Sheet URL");
     }
     const response = await fetch(url, {
-      next: { revalidate: 60 }, signal: AbortSignal.timeout(15000),
+      cache: "no-store", signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) throw new Error("Sheet request failed");
     const csv = await response.text();
