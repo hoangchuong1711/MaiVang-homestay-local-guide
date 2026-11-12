@@ -178,9 +178,6 @@ export default function LocalMap({
   return (
     <section className="map-panel" aria-label="Map of recommended places">
       <div ref={container} className="map-canvas" />
-      <div className="map-label">
-        <span className="live-dot" /> AROUND MAI VÀNG <span className="map-label-divider">/</span> BẾN TRE
-      </div>
       <div className="map-actions">
         <button title="Back to homestay" aria-label="Center map on homestay" disabled={!ready} onClick={() => flyHome(homestay)}>
           <Home size={18} />

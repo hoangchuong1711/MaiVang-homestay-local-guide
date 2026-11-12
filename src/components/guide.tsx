@@ -10,8 +10,6 @@ import {
   Clock3,
   Compass,
   Copy,
-  Heart,
-  Home,
   Languages,
   LocateFixed,
   Map,
@@ -21,7 +19,6 @@ import {
   Search,
   Sparkles,
   Utensils,
-  Volume2,
   Wallet,
   X,
 } from "lucide-react";
@@ -37,6 +34,8 @@ import {
 } from "@/lib/config";
 import type { PlacesResult } from "@/lib/places";
 import PlaceArt, { MaiFlower } from "./place-art";
+import SiteHeader from "./site-header";
+import PhraseList from "./phrase-list";
 
 const LocalMap = dynamic(() => import("./local-map"), {
   ssr: false,
@@ -48,28 +47,20 @@ const LocalMap = dynamic(() => import("./local-map"), {
   ),
 });
 
-const phrases: Array<[english: string, vietnamese: string, phonetic: string]> = [
-  ["Hello", "Xin chào", "sin chow"],
-  ["Thank you", "Cảm ơn", "kahm uhn"],
-  ["How much is this?", "Cái này bao nhiêu tiền?", "kai nay bow nyew tee-en?"],
-  ["Not spicy, please", "Không cay, làm ơn", "kohm kai, lahm uhn"],
-  ["Less sweet, please", "Ít ngọt, làm ơn", "eet ngawt, lahm uhn"],
-  ["The bill, please", "Cho tôi tính tiền", "chaw toy tinh tee-en"],
-  ["No meat or fish, please", "Không thịt, không cá, làm ơn", "kohm tit, kohm kah, lahm uhn"],
-  ["Very delicious!", "Ngon lắm!", "ngawn lahm!"],
-];
-
+type FilterCategory = Category | "All" | "Out & About";
+const filterCategories: FilterCategory[] = ["All", "Food", "Sightseeing", "Cafe", "Out & About"];
 type SheetSnap = "peek" | "half" | "full";
 const sheetOrder: SheetSnap[] = ["peek", "half", "full"];
 const MOBILE_QUERY = "(max-width: 760px)";
 
-const categorySubtitles: Record<Category | "All", string> = {
+const categorySubtitles: Record<FilterCategory, string> = {
   All: "Every curated spot",
   Food: "Local bowls & riverside kitchens",
   Sightseeing: "Islands, temples & heritage",
   Cafe: "Garden hammocks & coconut coffee",
   Tour: "Sampan boats & orchard trails",
   Essentials: "Markets, ATMs & pharmacies",
+  "Out & About": "Tours & everyday essentials",
 };
 
 export default function Guide({
@@ -81,7 +72,7 @@ export default function Guide({
   token: string;
   styleUrl: string;
 }) {
-  const [category, setCategory] = useState<Category | "All">("All");
+  const [category, setCategory] = useState<FilterCategory>("All");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [hovered, setHovered] = useState<string | null>(null);
@@ -113,6 +104,7 @@ export default function Guide({
     for (const p of data.places) {
       map[p.category] = (map[p.category] || 0) + 1;
     }
+    map["Out & About"] = map.Tour + map.Essentials;
     return map;
   }, [data.places]);
 
@@ -121,7 +113,7 @@ export default function Guide({
       data.places
         .filter(
           (p) =>
-            (category === "All" || p.category === category) &&
+            (category === "All" || p.category === category || (category === "Out & About" && (p.category === "Tour" || p.category === "Essentials"))) &&
             `${p.name} ${p.description} ${p.category} ${p.whatToOrder || ""}`
               .normalize("NFD")
               .replace(/[\u0300-\u036f]/g, "")
@@ -229,7 +221,7 @@ export default function Guide({
 
   function onSheetPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (!isMobile || !stageHeight) return;
-    if ((event.target as HTMLElement).closest("input, select, .search-box button")) return;
+    if ((event.target as HTMLElement).closest("input, select, .search-box button, .category-tabs, .sort-control")) return;
     drag.current = {
       startY: event.clientY,
       startH: snapHeights[sheet],
@@ -344,44 +336,10 @@ export default function Guide({
         Skip to places
       </a>
 
-      <header className="site-header">
-        <div className="site-header-inner">
-          <a className="brand" href="/" aria-label={`${homestay.name} local guide home`}>
-            <span className="brand-emblem" aria-hidden="true">
-              <MaiFlower size={24} className="brand-flower-svg" />
-            </span>
-            <span className="brand-text">
-              <strong>
-                Mai Vàng<span className="brand-dot">.</span>
-              </strong>
-              <small>HOMESTAY · BẾN TRE</small>
-            </span>
-          </a>
-
-          <nav aria-label="Main navigation">
-            <a className="nav-active" href="#explorer-section">
-              <Compass size={15} />
-              <span>Explore</span>
-            </a>
-            <button type="button" onClick={() => setModal("phrases")}>
-              <Languages size={15} />
-              <span>Vietnamese</span>
-            </button>
-            <a href={directionsUrl(homestay)} target="_blank" rel="noreferrer">
-              <Home size={15} />
-              <span>Way Home</span>
-            </a>
-          </nav>
-
-          <button type="button" className="host-button" onClick={() => setModal("contact")}>
-            <MessageCircle size={15} />
-            <span>Ask host</span>
-          </button>
-        </div>
-      </header>
+      <SiteHeader onPhrases={() => setModal("phrases")} onContact={() => setModal("contact")} />
 
       <main>
-        {/* Intro with Indochine Airmail Postcard */}
+        {/* Compact introduction */}
         <section className="intro-compact" id="explore">
           <div className="intro-compact-text">
             <p className="eyebrow">
@@ -406,68 +364,12 @@ export default function Guide({
             </p>
           </div>
 
-          <aside className="host-postcard" aria-label="A welcome postcard from your host">
-            <div className="postcard-inner">
-              <div className="postcard-header">
-                <div className="postcard-title-group">
-                  <span className="postcard-label">CARTE POSTALE · BẾN TRE</span>
-                  <span className="postcard-sub">A note for your stay</span>
-                </div>
-                <div className="postage-stamp" aria-hidden="true">
-                  <MaiFlower size={22} />
-                  <span>VIỆT NAM</span>
-                </div>
-              </div>
-
-              <blockquote className="postcard-quote">
-                “Welcome to our little corner of coconut country. Take a bicycle, follow the river breeze, and enjoy the slow days.”
-              </blockquote>
-
-              <div className="postcard-footer">
-                <span className="postcard-sig">
-                  <Heart size={13} />
-                  <span>With love, Mai Vàng family</span>
-                </span>
-                <span className="postcard-coords">10.2289° N · 106.3675° E</span>
-              </div>
-            </div>
-          </aside>
         </section>
 
         {/* Main Explorer Section */}
         <section className="explorer" id="explorer-section" aria-label="Local guide">
           <div ref={stageRef} className={`explorer-stage sheet-${sheet}`}>
             <div className="explorer-toolbar">
-              <div className="category-tabs" role="group" aria-label="Filter places by category">
-                <button
-                  type="button"
-                  className={category === "All" ? "active" : ""}
-                  aria-pressed={category === "All"}
-                  onClick={() => setCategory("All")}
-                  title={categorySubtitles.All}
-                >
-                  <Compass size={15} />
-                  <span>All</span>
-                  {data.places.length > 0 && <em className="tab-count">{counts.All}</em>}
-                </button>
-                {categories.map((item) => (
-                  <button
-                    type="button"
-                    key={item}
-                    className={category === item ? "active" : ""}
-                    aria-pressed={category === item}
-                    onClick={() => setCategory(item)}
-                    title={categorySubtitles[item]}
-                  >
-                    <span className="tab-emoji" aria-hidden="true">
-                      {categorySymbols[item]}
-                    </span>
-                    <span>{item}</span>
-                    {data.places.length > 0 && <em className="tab-count">{counts[item]}</em>}
-                  </button>
-                ))}
-              </div>
-
               <button
                 type="button"
                 className={`location-button ${position ? "is-active" : ""}`}
@@ -561,24 +463,17 @@ export default function Guide({
                     )}
                   </label>
 
-                  <div className="list-heading">
-                    <span aria-live="polite">
-                      <strong>{filtered.length}</strong> {filtered.length === 1 ? "place" : "places"}
-                      <span className="list-subtitle"> · {categorySubtitles[category]}</span>
-                    </span>
-                    <label className="sort-control">
-                      <ArrowDown size={12} />
-                      <select
-                        aria-label="Sort places by distance"
-                        value={sort}
-                        onChange={(e) => setSort(e.target.value as "home" | "me")}
-                      >
-                        <option value="home">From homestay</option>
-                        <option value="me" disabled={!position}>
-                          From me
-                        </option>
-                      </select>
-                    </label>
+                  <div className="category-filter-row">
+                    <div className="category-tabs" role="group" aria-label="Filter places by category">
+                      {filterCategories.map((item) => (
+                        <button type="button" key={item} className={category === item ? "active" : ""}
+                          aria-pressed={category === item} onClick={() => setCategory(item)} title={categorySubtitles[item]}>
+                          {item === "All" ? <Compass size={15} /> : <span className="tab-emoji" aria-hidden="true">{item === "Out & About" ? "✦" : categorySymbols[item]}</span>}
+                          <span>{item}</span>
+                          {data.places.length > 0 && <em className="tab-count">{counts[item]}</em>}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
 
@@ -840,41 +735,9 @@ export default function Guide({
               </span>
               <h2 id="dialog-title">A little Vietnamese.</h2>
               <p className="detail-description">
-                Tap any phrase to copy and hear the pronunciation, or show your screen to a local vendor.
+                Tap a phrase to copy it and hear it spoken, or show your screen to someone nearby.
               </p>
-              <div className="phrase-list">
-                {phrases.map(([english, vietnamese, phonetic]) => {
-                  const isCopied = copied === vietnamese;
-                  return (
-                    <button
-                      type="button"
-                      key={english}
-                      className={isCopied ? "is-copied" : ""}
-                      onClick={() => copyPhrase(vietnamese, true)}
-                      aria-label={`Copy ${vietnamese}`}
-                    >
-                      <span className="phrase-text">
-                        <small>{english}</small>
-                        <strong lang="vi">{vietnamese}</strong>
-                        <em className="phrase-phonetic">“{phonetic}”</em>
-                      </span>
-                      <span className="phrase-copy-badge">
-                        {isCopied ? (
-                          <>
-                            <Check size={16} />
-                            <span>Copied</span>
-                          </>
-                        ) : (
-                          <>
-                            <Volume2 size={15} />
-                            <Copy size={15} />
-                          </>
-                        )}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
+              <PhraseList copied={copied} onChoose={(vietnamese) => copyPhrase(vietnamese, true)} />
               <p className="detail-note" role="status">
                 {copied
                   ? copied.startsWith("Could not")
