@@ -2,9 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import mapboxgl from "mapbox-gl";
-import { ArrowUpRight, Home, LocateFixed, MapPin, Navigation, RotateCcw, X } from "lucide-react";
+import { ArrowUpRight, LocateFixed, MapPin, Navigation, RotateCcw, X } from "lucide-react";
 import { categorySymbols, directionsUrl, distanceKm, formatDistance, homestay, type Coordinates, type Place } from "@/lib/config";
 import PlaceArt from "./place-art";
+import LogoMark from "./logo-mark";
+import { useLocale } from "@/lib/i18n";
 
 type Props = {
   places: Place[];
@@ -41,12 +43,14 @@ export default function LocalMap({
   token,
   styleUrl,
 }: Props) {
+  const { locale, t } = useLocale();
+  const categoryLabel = (item: Place["category"]) => t(({ Food: "food", Sightseeing: "sightseeing", Cafe: "cafe", Tour: "tour", Essentials: "essentials" } as const)[item]);
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<mapboxgl.Map | null>(null);
   const selectRef = useRef(onSelect);
   const insetRef = useRef(bottomInset);
   const [ready, setReady] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState<"" | "mapDetailError" | "mapError">("");
   selectRef.current = onSelect;
   insetRef.current = bottomInset;
 
@@ -92,10 +96,10 @@ export default function LocalMap({
         setError("");
       });
       instance.on("error", () => {
-        setError("Some map details could not load. Your list and directions still work.");
+        setError("mapDetailError");
       });
     } catch {
-      setError("The map could not start on this browser. Explore the places in the list instead.");
+      setError("mapError");
       return;
     }
     const observer = new ResizeObserver(() => instance.resize());
@@ -117,10 +121,21 @@ export default function LocalMap({
     const instance = map.current;
     const home = document.createElement("button");
     home.className = "home-marker";
-    home.innerHTML = '<span aria-hidden="true">✳</span><span>Mai Vàng</span>';
+    const homeLogo = document.createElement("span");
+    homeLogo.className = "logo-mark";
+    homeLogo.style.setProperty("--logo-size", "26px");
+    homeLogo.setAttribute("aria-hidden", "true");
+    const homeImage = document.createElement("img");
+    homeImage.className = "logo-mark-image";
+    homeImage.src = "/mai-vang-logo.png";
+    homeImage.alt = "";
+    homeLogo.append(homeImage);
+    const homeName = document.createElement("span");
+    homeName.textContent = "Mai Vàng";
+    home.append(homeLogo, homeName);
     home.type = "button";
-    home.setAttribute("aria-label", "Mai Vàng Homestay, your home base");
-    const popup = new mapboxgl.Popup({ offset: 25 }).setText("Mai Vàng Homestay · Your home base");
+    home.setAttribute("aria-label", `${homestay.name}, ${t("homeBase")}`);
+    const popup = new mapboxgl.Popup({ offset: 25 }).setText(`${homestay.name} · ${t("homeBase")}`);
     const homeMarker = new mapboxgl.Marker({ element: home })
       .setLngLat([homestay.lng, homestay.lat])
       .setPopup(popup)
@@ -135,7 +150,7 @@ export default function LocalMap({
       button.textContent = categorySymbols[place.category];
       button.title = place.name;
       button.setAttribute("data-name", place.name);
-      button.setAttribute("aria-label", `Open ${place.name}`);
+      button.setAttribute("aria-label", `${t("openPlace")} ${place.name}`);
       button.addEventListener("click", () => selectRef.current(place.id));
       return new mapboxgl.Marker({ element: button }).setLngLat([place.lng, place.lat]).addTo(instance);
     });
@@ -143,18 +158,18 @@ export default function LocalMap({
       homeMarker.remove();
       markers.forEach((m) => m.remove());
     };
-  }, [places, selected, hovered, ready]);
+  }, [places, selected, hovered, ready, locale]);
 
   useEffect(() => {
     if (!ready || !map.current || !position) return;
     const element = document.createElement("div");
     element.className = "you-marker";
-    element.setAttribute("aria-label", "Your approximate location");
+    element.setAttribute("aria-label", t("myLocation"));
     const marker = new mapboxgl.Marker({ element }).setLngLat([position.lng, position.lat]).addTo(map.current);
     return () => {
       marker.remove();
     };
-  }, [position, ready]);
+  }, [position, ready, locale]);
 
   useEffect(() => {
     const place = places.find((p) => p.id === selected);
@@ -176,17 +191,17 @@ export default function LocalMap({
   }
 
   return (
-    <section className="map-panel" aria-label="Map of recommended places">
+    <section className="map-panel" aria-label={t("mapPlaces")}>
       <div ref={container} className="map-canvas" />
       <div className="map-actions">
-        <button title="Back to homestay" aria-label="Center map on homestay" disabled={!ready} onClick={() => flyHome(homestay)}>
-          <Home size={18} />
+        <button title={t("backHome")} aria-label={t("centerHome")} disabled={!ready} onClick={() => flyHome(homestay)}>
+          <LogoMark size={19} />
         </button>
-        <button title="Show all places" aria-label="Fit all places on map" disabled={!ready} onClick={fitPlaces}>
+        <button title={t("showAll")} aria-label={t("fitPlaces")} disabled={!ready} onClick={fitPlaces}>
           <RotateCcw size={18} />
         </button>
         {position && (
-          <button title="Show my location" aria-label="Center map on my location" disabled={!ready} onClick={() => flyHome(position)}>
+          <button title={t("myLocation")} aria-label={t("centerMe")} disabled={!ready} onClick={() => flyHome(position)}>
             <LocateFixed size={18} />
           </button>
         )}
@@ -194,34 +209,34 @@ export default function LocalMap({
       {!token ? (
         <div className="map-notice">
           <span className="notice-icon" aria-hidden="true">🗺️</span>
-          <strong>Your map is almost ready</strong>
-          <p>Add your Mapbox public token to the local configuration. The curated guide is ready to explore.</p>
+          <strong>{t("mapAlmost")}</strong>
+          <p>{t("mapConfig")}</p>
         </div>
       ) : error ? (
         <div className="map-warning" role="status">
-          {error}
+          {t(error)}
         </div>
       ) : !ready ? (
         <div className="map-notice">
           <span className="map-spinner" />
-          <p>Finding our little corner of Bến Tre…</p>
+          <p>{t("mapFinding")}</p>
         </div>
       ) : null}
 
       {activePlace && (
-        <div className="map-preview-card" role="region" aria-label={`Selected place: ${activePlace.name}`}>
+        <div className="map-preview-card" role="region" aria-label={`${t("selectedPlace")}: ${activePlace.name}`}>
           <button type="button" className="map-preview-main" onClick={() => (onOpen ?? onSelect)(activePlace.id)}>
             <div className="map-preview-thumb">
               <PlaceArt place={activePlace} />
             </div>
             <div className="map-preview-body">
               <span className={`category-label label-${activePlace.category.toLowerCase()}`}>
-                {categorySymbols[activePlace.category]} {activePlace.category}
+                {categorySymbols[activePlace.category]} {categoryLabel(activePlace.category)}
               </span>
               <strong>{activePlace.name}</strong>
               <span className="map-preview-meta">
                 <MapPin size={12} />
-                {formatDistance(distanceKm(origin, activePlace))} {fromMe ? "from you" : "from home"}
+                {formatDistance(distanceKm(origin, activePlace))} {fromMe ? t("fromYou") : t("fromHome")}
               </span>
             </div>
           </button>
@@ -231,15 +246,15 @@ export default function LocalMap({
               href={directionsUrl(activePlace)}
               target="_blank"
               rel="noreferrer"
-              aria-label={`Directions to ${activePlace.name}`}
-              title="Open in Google Maps"
+              aria-label={`${t("directionsTo")} ${activePlace.name}`}
+              title={t("openGoogle")}
             >
               <Navigation size={15} />
-              <span>Go</span>
+              <span>{t("mapGo")}</span>
               <ArrowUpRight size={13} />
             </a>
             {onClearSelection && (
-              <button type="button" className="map-preview-close" aria-label="Close place preview" onClick={onClearSelection}>
+              <button type="button" className="map-preview-close" aria-label={t("closePreview")} onClick={onClearSelection}>
                 <X size={15} />
               </button>
             )}
@@ -248,7 +263,7 @@ export default function LocalMap({
       )}
 
       <div className="map-legend">
-        <span className="legend-home">✳</span> Your home base <span className="legend-line" /> <span>🌿</span> Local discoveries
+        <LogoMark size={17} /> {t("homeBase")} <span className="legend-line" /> <span>🌿</span> {t("discoveries")}
       </div>
     </section>
   );

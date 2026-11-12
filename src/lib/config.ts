@@ -19,8 +19,12 @@ export type Place = Coordinates & {
   whatToOrder: string;
   priceRange: string;
   openingHours: string;
+  closingHours: string;
   tips: string;
   imageUrl: string;
+  googleMapUrl: string;
+  illusX: number | null;
+  illusY: number | null;
 };
 
 export const categorySymbols: Record<Category, string> = {
@@ -39,6 +43,7 @@ export function formatDistance(km: number) {
   return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`;
 }
 
-export function directionsUrl(point: Coordinates) {
+export function directionsUrl(point: Coordinates & { googleMapUrl?: string }) {
+  if (point.googleMapUrl) return point.googleMapUrl;
   return `https://www.google.com/maps/dir/?api=1&destination=${point.lat},${point.lng}`;
 }

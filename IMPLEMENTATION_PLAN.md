@@ -38,14 +38,16 @@ Tạo Sheet mới, đặt tên tab là `places`. Hàng đầu là các tên cộ
 | `category` | Có | Một trong `Food`, `Sightseeing`, `Cafe`, `Tour`, `Essentials` |
 | `lat` | Có | Vĩ độ, số thập phân dùng dấu chấm |
 | `lng` | Có | Kinh độ, số thập phân dùng dấu chấm |
+| `google_map_url` | Không | Link Google Maps của địa điểm; để trống sẽ dùng tọa độ cho nút chỉ đường |
 | `description` | Nên có | Mô tả; viết tiếng Việt trước cũng được, mình dịch sau |
 | `what_to_order` | Không | Món nên gọi, ví dụ `Coconut coffee — Cà phê dừa` |
 | `price_range` | Không | Khoảng giá thật nếu biết; ghi rõ VND |
 | `opening_hours` | Không | Giờ mở cửa đã xác minh |
+| `closing_hours` | Không | Giờ đóng cửa đã xác minh |
 | `tips` | Không | Mẹo thực tế như chỉ nhận tiền mặt |
 | `image_url` | Nên có | Link ảnh HTTPS từ Cloudinary |
-| `illus_x` | Không | Để trống, dùng ở giai đoạn sau |
-| `illus_y` | Không | Để trống, dùng ở giai đoạn sau |
+| `illus_x` | Không | Tọa độ số cho bản đồ vẽ tay; chưa hiển thị trên bản đồ hiện tại |
+| `illus_y` | Không | Tọa độ số cho bản đồ vẽ tay; chưa hiển thị trên bản đồ hiện tại |
 
 Nhập 3–5 địa điểm để chạy thử; chưa cần đủ 15–20. Không biết giá/giờ thì để trống.
 

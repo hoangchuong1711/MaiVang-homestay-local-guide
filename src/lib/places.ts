@@ -1,14 +1,6 @@
 import Papa from "papaparse";
 import { categories, type Category, type Place } from "./config";
 
-// Exact source-text translations for the initial Sheet. New/edited text is preserved.
-const translations: Record<string, string> = {
-  "Cù lao trên sông Tiền, thích hợp tham quan cảnh sông nước Bến Tre.": "An island on the Tiền River, a lovely spot to discover Bến Tre’s riverside scenery.",
-  "Khu du lịch sinh thái có trò chơi vận động, hoạt động nhóm và nhà hàng.": "An outdoor recreation area with active games, group activities and a restaurant.",
-  "Điểm tham quan tìm hiểu lịch sử và văn hóa địa phương, gần sông Bến Tre.": "Discover local history and culture at this museum near the Bến Tre River.",
-  "Chợ trung tâm để xem sản vật địa phương và mua đồ dùng hằng ngày.": "Explore local produce and pick up everyday essentials at Bến Tre’s central market.",
-};
-
 export function imageUrl(raw: string): string {
   try {
     const url = new URL(raw);
@@ -16,10 +8,27 @@ export function imageUrl(raw: string): string {
     if (url.hostname === "res.cloudinary.com") {
       // The initial Sheet contains demo/sample.jpg, not photographs of these places.
       if (url.pathname.startsWith("/demo/")) return "";
-      return raw.replace("/image/upload/", "/image/upload/f_auto,q_auto,w_900,c_limit/");
     }
-    return raw;
+    return url.href;
   } catch { return ""; }
+}
+
+export function googleMapUrl(raw: string): string {
+  try {
+    const url = new URL(raw);
+    const host = url.hostname.toLowerCase();
+    if (url.protocol !== "https:") return "";
+    if (host === "maps.app.goo.gl" || (host === "goo.gl" && url.pathname.startsWith("/maps"))) return raw;
+    if ((host === "google.com" || host === "www.google.com") && url.pathname.startsWith("/maps")) return raw;
+    if (host === "maps.google.com") return raw;
+    return "";
+  } catch { return ""; }
+}
+
+function optionalNumber(raw: string): number | null {
+  if (!raw) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function parsePlaces(csv: string): { places: Place[]; skipped: number } {
@@ -42,11 +51,13 @@ export function parsePlaces(csv: string): { places: Place[]; skipped: number } {
       || !get("lat") || !get("lng") || !Number.isFinite(lat) || !Number.isFinite(lng)
       || Math.abs(lat) > 90 || Math.abs(lng) > 180) { skipped++; return; }
     seen.add(id);
-    const description = get("description");
     places.push({ id, name, category: category as Category, lat, lng,
-      description: translations[description] || description,
+      description: get("description"),
       whatToOrder: get("what_to_order"), priceRange: get("price_range"),
-      openingHours: get("opening_hours"), tips: get("tips"), imageUrl: imageUrl(get("image_url")),
+      openingHours: get("opening_hours"), closingHours: get("closing_hours"),
+      tips: get("tips"), imageUrl: imageUrl(get("image_url")),
+      googleMapUrl: googleMapUrl(get("google_map_url")),
+      illusX: optionalNumber(get("illus_x")), illusY: optionalNumber(get("illus_y")),
     });
   });
   return { places, skipped };
@@ -63,7 +74,7 @@ export async function getPlaces(): Promise<PlacesResult> {
       throw new Error("Invalid published Sheet URL");
     }
     const response = await fetch(url, {
-      next: { revalidate: 3600 }, signal: AbortSignal.timeout(15000),
+      next: { revalidate: 60 }, signal: AbortSignal.timeout(15000),
     });
     if (!response.ok) throw new Error("Sheet request failed");
     const csv = await response.text();

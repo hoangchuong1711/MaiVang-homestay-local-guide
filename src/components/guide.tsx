@@ -33,35 +33,27 @@ import {
   type Coordinates,
 } from "@/lib/config";
 import type { PlacesResult } from "@/lib/places";
-import PlaceArt, { MaiFlower } from "./place-art";
+import PlaceArt from "./place-art";
+import LogoMark from "./logo-mark";
 import SiteHeader from "./site-header";
 import PhraseList from "./phrase-list";
+import { useLocale } from "@/lib/i18n";
 
 const LocalMap = dynamic(() => import("./local-map"), {
   ssr: false,
-  loading: () => (
-    <div className="map-panel map-loading">
-      <span className="map-spinner" />
-      <span>Unfolding the Bến Tre map…</span>
-    </div>
-  ),
+  loading: () => <MapLoading />,
 });
+
+function MapLoading() {
+  const { t } = useLocale();
+  return <div className="map-panel map-loading"><span className="map-spinner" /><span>{t("mapUnfolding")}</span></div>;
+}
 
 type FilterCategory = Category | "All" | "Out & About";
 const filterCategories: FilterCategory[] = ["All", "Food", "Sightseeing", "Cafe", "Out & About"];
 type SheetSnap = "peek" | "half" | "full";
 const sheetOrder: SheetSnap[] = ["peek", "half", "full"];
 const MOBILE_QUERY = "(max-width: 760px)";
-
-const categorySubtitles: Record<FilterCategory, string> = {
-  All: "Every curated spot",
-  Food: "Local bowls & riverside kitchens",
-  Sightseeing: "Islands, temples & heritage",
-  Cafe: "Garden hammocks & coconut coffee",
-  Tour: "Sampan boats & orchard trails",
-  Essentials: "Markets, ATMs & pharmacies",
-  "Out & About": "Tours & everyday essentials",
-};
 
 export default function Guide({
   data,
@@ -72,6 +64,8 @@ export default function Guide({
   token: string;
   styleUrl: string;
 }) {
+  const { t } = useLocale();
+  const categoryLabel = (item: FilterCategory) => t(({ All: "all", Food: "food", Sightseeing: "sightseeing", Cafe: "cafe", Tour: "tour", Essentials: "essentials", "Out & About": "outAbout" } as const)[item]);
   const [category, setCategory] = useState<FilterCategory>("All");
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
@@ -79,7 +73,7 @@ export default function Guide({
   const [modal, setModal] = useState<"place" | "phrases" | "contact" | null>(null);
   const [position, setPosition] = useState<Coordinates | null>(null);
   const [locating, setLocating] = useState(false);
-  const [locationMessage, setLocationMessage] = useState("");
+  const [locationMessage, setLocationMessage] = useState<"" | "noGeolocation" | "locationSuccess" | "locationDenied" | "locationError">("");
   const [sort, setSort] = useState<"home" | "me">("home");
   const [copied, setCopied] = useState("");
   const dialog = useRef<HTMLDialogElement>(null);
@@ -283,7 +277,7 @@ export default function Guide({
 
   function locate() {
     if (!navigator.geolocation) {
-      setLocationMessage("This browser cannot share location. Distances are shown from the homestay.");
+      setLocationMessage("noGeolocation");
       return;
     }
     const requestId = ++locationRequest.current;
@@ -295,15 +289,15 @@ export default function Guide({
         setPosition({ lat: result.coords.latitude, lng: result.coords.longitude });
         setSort("me");
         setLocating(false);
-        setLocationMessage("Distances now start from your location. Your location stays private in this browser.");
+        setLocationMessage("locationSuccess");
       },
       (error) => {
         if (requestId !== locationRequest.current) return;
         setLocating(false);
         setLocationMessage(
           error.code === 1
-            ? "Location permission was not granted. You can still explore from the homestay."
-            : "We couldn’t find your location. Try again, or explore from the homestay."
+            ? "locationDenied"
+            : "locationError"
         );
       },
       { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }
@@ -326,14 +320,14 @@ export default function Guide({
       await navigator.clipboard.writeText(text);
       setCopied(text);
     } catch {
-      setCopied("Could not copy. You can show this card to someone instead.");
+      setCopied("__copy_failed__");
     }
   }
 
   return (
     <>
       <a className="skip-link" href="#places">
-        Skip to places
+        {t("skipPlaces")}
       </a>
 
       <SiteHeader onPhrases={() => setModal("phrases")} onContact={() => setModal("contact")} />
@@ -343,10 +337,10 @@ export default function Guide({
         <section className="intro-compact" id="explore">
           <div className="intro-compact-text">
             <p className="eyebrow">
-              <span className="eyebrow-dot" /> HANDPICKED BY YOUR HOST
+              <span className="eyebrow-dot" /> {t("handpicked")}
             </p>
             <h1>
-              Take the slow road. Find a little{" "}
+              {t("intro")}{" "}
               <em className="highlight-place">
                 Bến Tre.
                 <svg className="river-underline" viewBox="0 0 220 14" fill="none" aria-hidden="true">
@@ -360,14 +354,14 @@ export default function Guide({
               </em>
             </h1>
             <p className="intro-copy">
-              Shaded coconut lanes, riverside kitchens, and everyday discoveries around Mai Vàng.
+              {t("introCopy")}
             </p>
           </div>
 
         </section>
 
         {/* Main Explorer Section */}
-        <section className="explorer" id="explorer-section" aria-label="Local guide">
+        <section className="explorer" id="explorer-section" aria-label={t("localGuide")}>
           <div ref={stageRef} className={`explorer-stage sheet-${sheet}`}>
             <div className="explorer-toolbar">
               <button
@@ -378,7 +372,7 @@ export default function Guide({
               >
                 <LocateFixed size={15} />
                 <span className="location-button-text">
-                  {locating ? "Locating…" : position ? "Update location" : "Near me"}
+                  {locating ? t("locating") : position ? t("updateLocation") : t("nearMe")}
                 </span>
               </button>
             </div>
@@ -386,11 +380,11 @@ export default function Guide({
             {locationMessage && (
               <div className="location-status" role="status">
                 <LocateFixed size={15} />
-                <span>{locationMessage}</span>
+                <span>{t(locationMessage)}</span>
                 <button
                   type="button"
                   className="status-dismiss"
-                  aria-label="Dismiss location notice"
+                  aria-label={t("dismissLocation")}
                   onClick={() => setLocationMessage("")}
                 >
                   <X size={14} />
@@ -399,7 +393,7 @@ export default function Guide({
             )}
 
             <div className="explorer-body">
-              <section className="places-panel" id="places" aria-label="Recommended places">
+              <section className="places-panel" id="places" aria-label={t("recommendedPlaces")}>
                 <div
                   ref={sheetHeaderRef}
                   className="places-panel-header"
@@ -412,19 +406,19 @@ export default function Guide({
                     <button
                       type="button"
                       className="sheet-grabber"
-                      aria-label={`Places sheet (${sheet} view). Press up or down arrow, tap, or drag to resize`}
+                      aria-label={`${t("placeSheet")} (${sheet} ${t("view")}). ${t("resizeSheet")}`}
                       onKeyDown={onGrabberKeyDown}
                     >
                       <span className="sheet-grabber-pill" aria-hidden="true" />
                     </button>
-                    <div className="sheet-snap-pills" role="group" aria-label="Sheet height">
+                    <div className="sheet-snap-pills" role="group" aria-label={t("sheetHeight")}>
                       <button
                         type="button"
                         className={sheet === "peek" ? "active" : ""}
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => snapTo("peek")}
                       >
-                        Map
+                        {t("map")}
                       </button>
                       <button
                         type="button"
@@ -432,7 +426,7 @@ export default function Guide({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => snapTo("half")}
                       >
-                        Split
+                        {t("split")}
                       </button>
                       <button
                         type="button"
@@ -440,7 +434,7 @@ export default function Guide({
                         onPointerDown={(e) => e.stopPropagation()}
                         onClick={() => snapTo("full")}
                       >
-                        List ({filtered.length})
+                        {t("list")} ({filtered.length})
                       </button>
                     </div>
                   </div>
@@ -448,8 +442,8 @@ export default function Guide({
                   <label className="search-box">
                     <Search size={16} />
                     <input
-                      aria-label="Search places"
-                      placeholder="Search dishes, cafes, islands…"
+                      aria-label={t("searchLabel")}
+                      placeholder={t("search")}
                       value={query}
                       onFocus={() => {
                         if (isMobile && sheet === "peek") snapTo("half");
@@ -457,19 +451,19 @@ export default function Guide({
                       onChange={(e) => setQuery(e.target.value)}
                     />
                     {query && (
-                      <button type="button" aria-label="Clear search" onClick={() => setQuery("")}>
+                      <button type="button" aria-label={t("clearSearch")} onClick={() => setQuery("")}>
                         <X size={15} />
                       </button>
                     )}
                   </label>
 
                   <div className="category-filter-row">
-                    <div className="category-tabs" role="group" aria-label="Filter places by category">
+                    <div className="category-tabs" role="group" aria-label={t("filterLabel")}>
                       {filterCategories.map((item) => (
                         <button type="button" key={item} className={category === item ? "active" : ""}
-                          aria-pressed={category === item} onClick={() => setCategory(item)} title={categorySubtitles[item]}>
+                          aria-pressed={category === item} onClick={() => setCategory(item)} title={categoryLabel(item)}>
                           {item === "All" ? <Compass size={15} /> : <span className="tab-emoji" aria-hidden="true">{item === "Out & About" ? "✦" : categorySymbols[item]}</span>}
-                          <span>{item}</span>
+                          <span>{categoryLabel(item)}</span>
                           {data.places.length > 0 && <em className="tab-count">{counts[item]}</em>}
                         </button>
                       ))}
@@ -483,14 +477,14 @@ export default function Guide({
                       <div className="empty-icon-wrap">
                         <MapPin size={26} />
                       </div>
-                      <h2>Our guide is taking a moment.</h2>
+                      <h2>{t("guidePause")}</h2>
                       <p>
                         {data.status === "unconfigured"
-                          ? "Connect the published places sheet in your local configuration to start exploring."
-                          : "We couldn’t load the places right now. Please check your connection and try again."}
+                          ? t("configureSheet")
+                          : t("loadError")}
                       </p>
                       <button type="button" className="primary-button" onClick={() => window.location.reload()}>
-                        Try again
+                        {t("tryAgain")}
                       </button>
                     </div>
                   ) : filtered.length === 0 ? (
@@ -498,11 +492,11 @@ export default function Guide({
                       <div className="empty-icon-wrap">
                         <Compass size={26} />
                       </div>
-                      <h2>{data.places.length ? "No matches yet." : "Good places are on their way."}</h2>
+                      <h2>{data.places.length ? t("noMatches") : t("placesComing")}</h2>
                       <p>
                         {data.places.length
-                          ? "Try another category or clear your search."
-                          : "Your host is preparing the local recommendations."}
+                          ? t("tryAnother")
+                          : t("preparing")}
                       </p>
                       {data.places.length > 0 && (
                         <button
@@ -513,7 +507,7 @@ export default function Guide({
                             setQuery("");
                           }}
                         >
-                          Show all places <ArrowRight size={15} />
+                          {t("showAll")} <ArrowRight size={15} />
                         </button>
                       )}
                     </div>
@@ -538,15 +532,15 @@ export default function Guide({
                           <div className="card-content">
                             <div className="card-top-row">
                               <span className={`category-label label-${p.category.toLowerCase()}`}>
-                                {categorySymbols[p.category]} {p.category}
+                                {categorySymbols[p.category]} {categoryLabel(p.category)}
                               </span>
                               <span className="card-distance">
                                 <MapPin size={12} />
-                                {formatDistance(distanceKm(origin, p))} {fromMe ? "from you" : "from home"}
+                                {formatDistance(distanceKm(origin, p))} {fromMe ? t("fromYou") : t("fromHome")}
                               </span>
                             </div>
                             <h2>{p.name}</h2>
-                            <p>{p.description || "Selected by your host. Tap for details & directions."}</p>
+                            <p>{p.description || t("selectedByHost")}</p>
 
                             {p.whatToOrder && (
                               <div className="card-dish-strip">
@@ -558,15 +552,15 @@ export default function Guide({
                             <div className="card-meta">
                               <div className="card-tags">
                                 {p.priceRange && <span className="card-tag">{p.priceRange}</span>}
-                                {!p.priceRange && p.openingHours && <span className="card-tag">{p.openingHours}</span>}
+                                {!p.priceRange && (p.openingHours || p.closingHours) && <span className="card-tag">{[p.openingHours, p.closingHours].filter(Boolean).join(" – ")}</span>}
                                 {p.tips && (
                                   <span className="card-tag tag-highlight">
-                                    <Sparkles size={11} /> Tip
+                                    <Sparkles size={11} /> {t("tip")}
                                   </span>
                                 )}
                               </div>
                               <span className="card-arrow">
-                                <span>Details</span>
+                                <span>{t("details")}</span>
                                 <ArrowUpRight size={14} />
                               </span>
                             </div>
@@ -597,7 +591,7 @@ export default function Guide({
           </div>
 
           <p className="distance-note">
-            Straight-line distance estimates · Open Google Maps for actual routes.
+            {t("straightLine")}
           </p>
         </section>
       </main>
@@ -605,10 +599,10 @@ export default function Guide({
       <footer className="site-footer">
         <div className="site-footer-inner">
           <span className="footer-brand">
-            <MaiFlower size={18} className="footer-flower-svg" />
-            <span>Made for slow days in Bến Tre.</span>
+            <LogoMark size={20} />
+            <span>{t("madeFor")}</span>
           </span>
-          <small>{homestay.name} · Local Guide</small>
+          <small>{homestay.name} · {t("localGuide")}</small>
         </div>
       </footer>
 
@@ -624,7 +618,7 @@ export default function Guide({
       >
         <div className="dialog-inner">
           <span className="dialog-handle" aria-hidden="true" />
-          <button type="button" className="dialog-close" aria-label="Close dialog" onClick={() => setModal(null)}>
+          <button type="button" className="dialog-close" aria-label={t("closeDialog")} onClick={() => setModal(null)}>
             <X size={20} />
           </button>
 
@@ -633,7 +627,7 @@ export default function Guide({
               <div className="dialog-hero">
                 <PlaceArt key={place.id} place={place} large />
                 <span className={`dialog-category-badge label-${place.category.toLowerCase()}`}>
-                  {categorySymbols[place.category]} {place.category}
+                  {categorySymbols[place.category]} {categoryLabel(place.category)}
                 </span>
               </div>
               <div className="dialog-content">
@@ -641,33 +635,33 @@ export default function Guide({
                 <p className="detail-distance">
                   <MapPin size={15} />
                   <span>
-                    <strong>{formatDistance(distanceKm(homestay, place))}</strong> from Mai Vàng
+                    <strong>{formatDistance(distanceKm(homestay, place))}</strong> {t("fromMaiVang")}
                     {position && (
                       <>
                         {" "}
-                        · <strong>{formatDistance(distanceKm(position, place))}</strong> from you
+                        · <strong>{formatDistance(distanceKm(position, place))}</strong> {t("fromYou")}
                       </>
                     )}{" "}
-                    <span className="detail-distance-sub">(straight-line)</span>
+                    <span className="detail-distance-sub">{t("straightLineShort")}</span>
                   </span>
                 </p>
                 <p className="detail-description">
-                  {place.description || "Ask your host what makes this place special."}
+                  {place.description || t("askHostSpecial")}
                 </p>
 
                 <div className="detail-facts">
                   <div className="fact-box">
                     <Wallet size={18} />
                     <div>
-                      <span>Price range</span>
-                      <strong>{place.priceRange || "Ask locally"}</strong>
+                      <span>{t("priceRange")}</span>
+                      <strong>{place.priceRange || t("askLocally")}</strong>
                     </div>
                   </div>
                   <div className="fact-box">
                     <Clock3 size={18} />
                     <div>
-                      <span>Opening hours</span>
-                      <strong>{place.openingHours || "Check before visiting"}</strong>
+                      <span>{t("openingHours")}</span>
+                      <strong>{[place.openingHours, place.closingHours].filter(Boolean).join(" – ") || t("checkBefore")}</strong>
                     </div>
                   </div>
                 </div>
@@ -676,7 +670,7 @@ export default function Guide({
                   <section className="order-card">
                     <div className="order-card-header">
                       <span className="eyebrow">
-                        <Utensils size={12} /> WHAT TO ORDER · SHOW TO VENDOR
+                        <Utensils size={12} /> {t("orderTitle")}
                       </span>
                       <button
                         type="button"
@@ -684,21 +678,21 @@ export default function Guide({
                         onClick={() => copyPhrase(place.whatToOrder, true)}
                       >
                         {copied === place.whatToOrder ? <Check size={14} /> : <Copy size={14} />}
-                        <span>{copied === place.whatToOrder ? "Copied" : "Copy & Speak"}</span>
+                        <span>{copied === place.whatToOrder ? t("copied") : t("copySpeak")}</span>
                       </button>
                     </div>
                     <p lang="vi">{place.whatToOrder}</p>
-                    <small>Show this box directly to the person taking your order.</small>
+                    <small>{t("showVendor")}</small>
                   </section>
                 )}
 
                 {place.tips && (
                   <section className="tip-card">
                     <span className="tip-badge" aria-hidden="true">
-                      <MaiFlower size={22} />
+                      <LogoMark size={23} />
                     </span>
                     <div>
-                      <strong>Host tip</strong>
+                      <strong>{t("hostTip")}</strong>
                       <p>{place.tips}</p>
                     </div>
                   </section>
@@ -712,7 +706,7 @@ export default function Guide({
                     rel="noreferrer"
                   >
                     <Navigation size={18} />
-                    <span>Let’s go · Google Maps</span>
+                    <span>{t("letsGo")}</span>
                     <ArrowUpRight size={17} />
                   </a>
                   <button
@@ -721,7 +715,7 @@ export default function Guide({
                     onClick={() => showOnMap(place.id)}
                   >
                     <Map size={17} />
-                    <span>Locate pin on map</span>
+                    <span>{t("locatePin")}</span>
                   </button>
                 </div>
               </div>
@@ -731,19 +725,19 @@ export default function Guide({
           {modal === "phrases" && (
             <div className="dialog-content phrases-content">
               <span className="eyebrow">
-                <Languages size={13} /> SPEAK LIKE A NEIGHBOR
+                <Languages size={13} /> {t("speakNeighbor")}
               </span>
-              <h2 id="dialog-title">A little Vietnamese.</h2>
+              <h2 id="dialog-title">{t("littleVietnamese")}</h2>
               <p className="detail-description">
-                Tap a phrase to copy it and hear it spoken, or show your screen to someone nearby.
+                {t("phraseIntro")}
               </p>
               <PhraseList copied={copied} onChoose={(vietnamese) => copyPhrase(vietnamese, true)} />
               <p className="detail-note" role="status">
                 {copied
-                  ? copied.startsWith("Could not")
-                    ? copied
-                    : "Copied to clipboard — ready to share or show."
-                  : "Tap any phrase to copy text & play audio."}
+                  ? copied === "__copy_failed__"
+                    ? t("copyFailed")
+                    : t("copyReady")
+                  : t("phraseHint")}
               </p>
             </div>
           )}
@@ -751,26 +745,26 @@ export default function Guide({
           {modal === "contact" && (
             <div className="dialog-content contact-content">
               <span className="contact-flower" aria-hidden="true">
-                <MaiFlower size={46} />
+                <LogoMark size={48} />
               </span>
-              <span className="eyebrow">ALWAYS HAPPY TO HELP</span>
-              <h2 id="dialog-title">Ask your host.</h2>
+              <span className="eyebrow">{t("happyHelp")}</span>
+              <h2 id="dialog-title">{t("askHostTitle")}</h2>
               <p className="detail-description">
-                Need a recommendation, a bicycle or boat ride, or help finding your way back? Reach out to Mai Vàng anytime.
+                {t("contactIntro")}
               </p>
               <div className="contact-actions">
                 <a className="primary-button" href={homestay.whatsapp} target="_blank" rel="noreferrer">
                   <MessageCircle size={18} />
-                  <span>Message on WhatsApp</span>
+                  <span>{t("whatsapp")}</span>
                   <ArrowUpRight size={17} />
                 </a>
                 <a className="secondary-button" href={homestay.instagram} target="_blank" rel="noreferrer">
-                  <span>Connect on Instagram (@maivanghomestay)</span>
+                  <span>{t("instagram")}</span>
                   <ArrowUpRight size={17} />
                 </a>
               </div>
               <a className="phone-link" href={`tel:${homestay.phone}`}>
-                Or call directly: +84 372 237 278
+                {t("call")}: +84 372 237 278
               </a>
             </div>
           )}

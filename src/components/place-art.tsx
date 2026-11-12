@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { categorySymbols, type Category, type Place } from "@/lib/config";
+import { useLocale } from "@/lib/i18n";
 
 export function MaiFlower({ size = 24, className = "" }: { size?: number; className?: string }) {
   return (
@@ -172,29 +173,30 @@ function CategorySvg({ category }: { category: Category }) {
 }
 
 export default function PlaceArt({ place, large = false }: { place: Place; large?: boolean }) {
-  const [failed, setFailed] = useState(false);
-  if (place.imageUrl && !failed) {
+  const { t } = useLocale();
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  if (place.imageUrl && failedUrl !== place.imageUrl) {
     return (
       <img
         className={`place-photo ${large ? "large" : ""}`}
         src={place.imageUrl}
         alt={place.name}
         loading="lazy"
-        onError={() => setFailed(true)}
+        onError={() => setFailedUrl(place.imageUrl)}
       />
     );
   }
   return (
     <div
       className={`place-art art-${place.category.toLowerCase()} ${large ? "large" : ""}`}
-      aria-label={`Illustration for ${place.category}; photo not yet added`}
+      aria-label={`${t("illustration")} ${place.name}; ${t("photoMissing")}`}
       role="img"
     >
       <CategorySvg category={place.category} />
       <span className="art-icon" aria-hidden="true">
         {categorySymbols[place.category]}
       </span>
-      {large && <span className="art-caption">Mekong field illustration · photo coming soon</span>}
+      {large && <span className="art-caption">{t("artCaption")}</span>}
     </div>
   );
 }

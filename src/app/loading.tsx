@@ -1,13 +1,15 @@
-import { MaiFlower } from "@/components/place-art";
+"use client";
+
+import LogoMark from "@/components/logo-mark";
+import { useLocale } from "@/lib/i18n";
 
 export default function Loading() {
+  const { t } = useLocale();
   return (
     <main className="loading-screen">
-      <span className="brand-emblem" aria-hidden="true">
-        <MaiFlower size={28} />
-      </span>
-      <h1>A little closer to Bến Tre.</h1>
-      <p>Unfolding your local field guide…</p>
+      <LogoMark size={54} />
+      <h1>{t("loadingTitle")}</h1>
+      <p>{t("loadingText")}</p>
     </main>
   );
 }

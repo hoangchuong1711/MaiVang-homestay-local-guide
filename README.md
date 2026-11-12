@@ -85,7 +85,7 @@ Giai đoạn sau: thêm Supabase (👍, đặt dịch vụ, khách đóng góp)
 **Quy trình cập nhật nội dung:**
 1. Upload ảnh lên Cloudinary rồi copy link
 2. Thêm một dòng mới vào Google Sheets, dán link ảnh vào cột `image_url`
-3. Web tự cập nhật sau tối đa khoảng 1 tiếng (cache `revalidate: 3600`), không cần sửa code
+3. Web tự cập nhật sau tối đa khoảng 1 phút (cache `revalidate: 60`), không cần sửa code
 
 ## 🗂️ 7. Cấu trúc dữ liệu (các cột trong Google Sheets)
 
@@ -95,13 +95,15 @@ Giai đoạn sau: thêm Supabase (👍, đặt dịch vụ, khách đóng góp)
 | `name` | Tên địa điểm |
 | `category` | Loại: Food / Sightseeing / Cafe / Tour / Essentials |
 | `lat`, `lng` | Tọa độ thật |
+| `google_map_url` | Link địa điểm Google Maps; nếu trống, nút chỉ đường dùng `lat`, `lng` |
 | `description` | Mô tả tiếng Anh |
 | `what_to_order` | Món nên gọi (tiếng Anh + tiếng Việt) |
 | `price_range` | Khoảng giá |
 | `opening_hours` | Giờ mở cửa |
+| `closing_hours` | Giờ đóng cửa; hiển thị cùng giờ mở cửa |
 | `tips` | Mẹo thực tế |
 | `image_url` | Link ảnh trên Cloudinary |
-| `illus_x`, `illus_y` | Vị trí trên bản đồ vẽ tay *(để trống, dùng sau này)* |
+| `illus_x`, `illus_y` | Tọa độ số trên bản đồ vẽ tay; đã được đọc nhưng chưa hiển thị ở bản đồ hiện tại |
 
 ## 🔐 8. Biến môi trường (`.env.local`)
 

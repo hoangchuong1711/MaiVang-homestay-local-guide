@@ -1,5 +1,6 @@
 import { Heart } from "lucide-react";
-import { MaiFlower } from "./place-art";
+import LogoMark from "./logo-mark";
+import { useLocale } from "@/lib/i18n";
 
 export type PostcardData = {
   id: string;
@@ -34,19 +35,23 @@ export const postcards: PostcardData[] = [
 ];
 
 export default function Postcard({ postcard }: { postcard: PostcardData }) {
+  const { t } = useLocale();
+  const first = postcard.id === "01";
+  const title = first ? t("postcard1Title") : t("postcard2Title");
+  const paragraphs = first ? [t("postcard1Body")] : [t("postcard2P1"), t("postcard2P2"), t("postcard2P3"), t("postcard2P4")];
   return (
     <article className="host-postcard postcard-entry" aria-labelledby={`postcard-${postcard.id}`}>
       <div className="postcard-inner">
         <div className="postcard-header">
           <div className="postcard-title-group">
-            <span className="postcard-label">CARTE POSTALE · BẾN TRE · {postcard.id}</span>
-            <h2 className="postcard-sub" id={`postcard-${postcard.id}`}>{postcard.title}</h2>
+            <span className="postcard-label">{t("postcardLabel")} · {postcard.id}</span>
+            <h2 className="postcard-sub" id={`postcard-${postcard.id}`}>{title}</h2>
           </div>
-          <div className="postage-stamp" aria-hidden="true"><MaiFlower size={22} /><span>VIỆT NAM</span></div>
+          <div className="postage-stamp" aria-hidden="true"><LogoMark size={25} /><span>VIỆT NAM</span></div>
         </div>
-        <div className="postcard-message">{postcard.paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
+        <div className="postcard-message">{paragraphs.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}</div>
         <div className="postcard-footer">
-          <span className="postcard-sig"><Heart size={13} /><span>{postcard.signoff}<br />{postcard.signature}</span></span>
+          <span className="postcard-sig"><Heart size={13} /><span>{first ? t("postcard1Signoff") : t("postcard2Signoff")}<br />{first ? t("postcard1Signature") : postcard.signature}</span></span>
           {postcard.coordinates && <span className="postcard-coords">{postcard.coordinates}</span>}
         </div>
       </div>
